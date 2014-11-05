@@ -7,8 +7,8 @@ CC := g++
 CFLAGS := -g -Wall -pthread
 
 # soruce file defines
-SOURCES := Client.c Server.c
-PROGRAMS := $(patsubst %.c, %, $(SOURCES))
+SOURCES := sender.cpp receiver.cpp
+PROGRAMS := $(patsubst %.cpp, %, $(SOURCES))
 SUFFIX := .exe
 
 #binary and object defines
