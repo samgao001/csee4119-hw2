@@ -117,7 +117,6 @@ int main(int argc, char* argv[])
 /**************************************************************/
 void quitHandler(int signal_code)
 {
-	shutdown(client_socket, SHUT_RDWR);
 	cout << endl << ">User terminated sender process." << endl;	
 	exit(EXIT_SUCCESS);
 }

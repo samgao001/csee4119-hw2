@@ -113,13 +113,7 @@ int main(int argc, char* argv[])
 /**************************************************************/
 void quitHandler(int signal_code)
 {
-	for(map<string, client>::iterator itr=login_users.begin(); itr!=login_users.end(); ++itr)
-	{
-		shutdown((*itr).second.socket_id, SHUT_RDWR);
-	}
-
 	printf("\n>User terminated receiver process.\n");
-	shutdown(server_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);
 }
 
