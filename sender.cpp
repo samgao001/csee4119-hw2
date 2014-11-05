@@ -17,6 +17,7 @@
 #include <sstream>
 #include <time.h>
 #include <unistd.h>
+#include <math.h>
 
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -26,192 +27,87 @@
 
 using namespace std;
 
-/******************* User Defines ********************************/
-#define BUFFER_SIZE				512
+/************************** Defines ******************************/
+#define BUFFER_SIZE						512
+
+/************************* Typedefs ******************************/
+typedef struct log_struct_t
+{
+	ofstream log_file;
+	time_t time_stamp;
+	string source;
+	string destin;
+	int seq_num;
+	int ack_num;
+	string flags;
+}log_data;
 
 /******************* Global Variables ****************************/
-int client_socket;
-int port_number;
+vector<byte[]> raw_data = new vector<byte[]>;
 
 /******************* Function Prototype **************************/
 void error(string str);
 void quitHandler(int exit_code);
+void read_file(string filename);
+void write_log(log_data* my_log);
 
 /******************* Main program ********************************/
 int main(int argc, char* argv[])
 {
-	struct sockaddr_in server_addr;
-	string addr;
-    string server_msg = "";
-    char msg[BUFFER_SIZE];
-    bool logout = false;
-    
-    // check if we have enough argument passed into the program
-    if (argc < 3) {
-    	error("Did not specify address and port number.\n>Usage: ./Client <IP Address> <Port #>");
-    	exit(EXIT_FAILURE);
-    }
-    
-    // setup to capture process terminate signals
+	string filename;
+	string remote_ip;
+	int remote_port;
+	string logfilename;
+	int window_size = 1;
+	
+	struct sockaddr_in receiver;
+	int receiver_socket;
+	
+	// setup to capture process terminate signals
 	signal(SIGINT, quitHandler);
 	signal(SIGTERM, quitHandler);
 	signal(SIGKILL, quitHandler);
 	signal(SIGQUIT, quitHandler);
 	signal(SIGTSTP, quitHandler);
     
-    // setup for the socket
-    memset(&server_addr, 0, sizeof(server_addr));
-    addr = argv[1];
-	port_number = atoi(argv[2]);
+    // check if we have enough argument passed into the program
+    if (argc < 4) {
+    	error("Not enough argument.\nUsage: ./receiver <filename> <remote_ip> <remote_port> <log_filename> <window_size>(window_size is optional)");
+    	exit(EXIT_FAILURE);
+    }
+	
+	filename = argv[1];
+	remote_ip = argv[2];
+	remote_port = atoi(argv[3]);
+	logfilename = argv[4];
+	
+	if(argc == 5)
+	{
+		window_size = atoi(argv[5]);
+	}
+ 
+	// setup receiver
+    memset(&receiver, 0, sizeof(receiver));
+	receiver.sin_addr.s_addr = inet_addr(remote_ip.c_str());
+    receiver.sin_family = PF_INET;
+    receiver.sin_port = htons(remote_port);
 	
 	// Try to open a socket and check if it open successfully
-    client_socket = socket(PF_INET, SOCK_STREAM, 0);
-    if(client_socket < 0)
+    receiver_socket = socket(PF_INET, SOCK_STREAM, 0);
+    if(receiver_socket < 0)
 	{
 		error("Failed to open socket.");
 		exit(EXIT_FAILURE);
 	}
 	
-	// setup ip address and port number for the communication
-	server_addr.sin_addr.s_addr = inet_addr(addr.c_str());
-    server_addr.sin_family = PF_INET;
-    server_addr.sin_port = htons(port_number);
-	
 	// Connect to remote server
-    if(connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+    if(connect(receiver_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0)
     {
-        error("Failed to connect to the server.");
+        error("Failed to connect to the receiver.");
         exit(EXIT_FAILURE);
     }
     
-    // Display message to indication connection established
-    cout << ">Connected to " << inet_ntoa(server_addr.sin_addr) << endl;
-    
-    bool login = false;
-    
-    // Log-in processing 
-    while(!logout)
-    {
-    	if(!login)
-    	{
-    		// clear buffer
-			memset(msg, 0, BUFFER_SIZE);
-		    if(recv(client_socket, msg, BUFFER_SIZE, 0) > 0)
-		    {
-		    	server_msg = string(msg);
-		    	// Check if client received a welcome message from the server
-		    	// Welcome message indicates successful log in
-		    	if(server_msg.find("Welcome") != string::npos)
-		    	{
-		    		// Display the welcome message and set the login flag true
-		    		cout << server_msg << endl;
-		    		login = true;
-		    		
-		    		// Receive the basic user input prompt from the server
-		    		// Could be nicer with GUI design
-		    		memset(msg, 0, BUFFER_SIZE);
-					if(recv(client_socket, msg, BUFFER_SIZE, 0) > 0)
-					{	
-						string rec_msg = string(msg);
-						cout << rec_msg;
-					}
-		    		
-		    		// Create a thread to handle all the incoming traffic
-		    		// This is done so to avoid blocking from the outgoing message scan
-		    		pthread_t rec_msg_tr;
-					if(pthread_create(&(rec_msg_tr), NULL, rec_msg_handler, &client_socket) < 0)
-					{
-						error("Could not create thread.");
-						logout = true;
-					}
-		    	}
-		    	// log-in failed. 
-		    	else if(server_msg.find("failed") != string::npos)
-		    	{
-		    		cout << server_msg << endl;
-		    	}
-		    	// Duplicate log-in
-		    	else if(server_msg.find("already logged in") != string::npos)
-		    	{
-		    		cout << server_msg << endl;
-		    	}
-		    	// user is blocked
-		    	else if(server_msg.find("blocked") != string::npos)
-		    	{
-		    		cout << server_msg << endl;
-		    	}
-		    	// user input for username and password
-		    	else
-		    	{
-		    		string msg1;
-		    		cout << server_msg;
-					getline(cin, msg1);
-					strcpy(msg, msg1.c_str());
-					
-					if(server_msg.find("Username") != string::npos)
-					{
-						username = msg1;
-					}
-					
-					// send a "nop" instead of empty message to avoid
-					// corruption. Server side has "nop" handle
-					if(strlen(msg) == 0)
-					{
-						sprintf(msg, "nop");
-					}
-					
-					// input "exit" to safely exit client. 
-					// This means exit cannot be username.
-					// Use of GUI will eliminate this issue.
-					if(msg1.compare("exit") == 0)
-					{
-						cout << "User decided to exit." << endl;
-						logout = true;
-					}
-					// Seding msg, exit if error
-					else if(send(client_socket, msg, strlen(msg), 0) < 0)
-					{
-						error("Connection lost, please reconnect.");
-						logout = true;
-					}
-		    	}
-		    }
-		    // exit if error in receiving msg
-		    else
-		    {
-		    	error("Connection lost, please reconnect.");
-		   		logout = true;
-			}
-    	}
-    	else
-    	{
-    		// Scanning for user input and send to server.
-			string msg1;
-			getline(cin, msg1);
-			memset(msg, 0, BUFFER_SIZE);
-			strcpy(msg, msg1.c_str());
-
-			if(strlen(msg) == 0)
-			{
-				sprintf(msg, "nop");
-			}
-
-			if(send(client_socket, msg, strlen(msg), 0) < 0)
-			{
-				error("Connection lost, please reconnect.");
-				logout = true;
-			}
-			
-			// logout command, assumed client termination
-			if(msg1.compare("logout") == 0)
-			{
-				logout = true;
-			}			
-    	}
-    }
-	
-	cout << ">Exited chat room." << endl;
-	shutdown(client_socket, SHUT_RDWR);
+	shutdown(receiver_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);
 }
 
@@ -222,37 +118,8 @@ int main(int argc, char* argv[])
 void quitHandler(int signal_code)
 {
 	shutdown(client_socket, SHUT_RDWR);
-	cout << endl << ">User terminated client process." << endl;	
+	cout << endl << ">User terminated sender process." << endl;	
 	exit(EXIT_SUCCESS);
-}
-
-/**************************************************************/
-/*	rec_msg_handler - Handler for incoming messages.
-/*					  reads and display all the incoming message
-/**************************************************************/
-void* rec_msg_handler(void* socket_id)
-{
-	int rec_socket = *(int*)socket_id;
-	char msg[BUFFER_SIZE];
-	int connected = true;
-	
-	while(connected)
-	{			
-		memset(msg, 0, BUFFER_SIZE);
-		if(recv(client_socket, msg, BUFFER_SIZE, 0) > 0)
-		{	
-			cout << string(msg);
-			cout.flush();
-		}
-		else
-		{
-			connected = false;
-		}			
-	}
-	
-	cout << ">Exited chat room." << endl;
-	shutdown(rec_socket, SHUT_RDWR);
-	exit(EXIT_FAILURE);
 }
 
 /**************************************************************/
@@ -261,4 +128,44 @@ void* rec_msg_handler(void* socket_id)
 void error(string str)
 {
 	cout << ">ERROR: " << str << endl;
+}
+
+void read_file(string filename)
+{
+	ifstream fd;
+	fd.open(filename);
+	streampos size;
+	byte[] buffer;
+	
+	if(fd.is_open())
+	{
+		size = fd.tellg();
+		buffer = new byte[size];
+		
+		fd.seekg(0, ios::beg);
+		fd.read(buffer, size);
+		fd.close();
+		
+		int i = 0;
+		
+		while(i < Math.ceil(size / BUFFER_SIZE))
+		{
+			memcpy(raw_data.at(i), &(buffer[i*BUFFER_SIZE]), BUFFER_SIZE); 
+		}
+		
+		for(int i = 0; i < raw_data.size(); i++)
+		{
+			for(int j = 0; j < BUFFER_SIZE; j++)
+			{
+				cout << raw_data.at(i)[j];
+			}
+			cout << endl;
+		}
+		
+		delete[] buffer;
+	}
+	else
+	{
+		error("File not found.");
+	}
 }
