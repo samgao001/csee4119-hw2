@@ -22,9 +22,9 @@
 
 #include <sys/types.h> 
 #include <sys/socket.h>
-#include <netinet/in.h>		
+#include <netinet/in.h>	
+#include <netinet/udp.h>	
 #include <arpa/inet.h> 
-#include <pthread.h> 
 
 using namespace std;
 
@@ -88,6 +88,7 @@ int main(int argc, char* argv[])
 		window_size = atoi(argv[5]);
 	}
 	
+	// port the file into byte buffer
 	read_file(filename);
  
 	// setup receiver
@@ -96,22 +97,13 @@ int main(int argc, char* argv[])
     receiver.sin_family = PF_INET;
     receiver.sin_port = htons(remote_port);
 	
-	// Try to open a socket and check if it open successfully
     receiver_socket = socket(PF_INET, SOCK_STREAM, 0);
     if(receiver_socket < 0)
 	{
 		error("Failed to open socket.");
 		exit(EXIT_FAILURE);
 	}
-	
-	// Connect to remote server
-    if(connect(receiver_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0)
-    {
-        error("Failed to connect to the receiver.");
-        exit(EXIT_FAILURE);
-    }
     
-	shutdown(receiver_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);
 }
 

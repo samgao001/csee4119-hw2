@@ -22,8 +22,8 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>		
+#include <netinet/udp.h>	
 #include <arpa/inet.h> 
-#include <pthread.h> 
 
 using namespace std;
 
@@ -61,6 +61,7 @@ int main(int argc, char* argv[])
 	int listening_socket;
 	int outgoing_socket;
 	struct sockaddr_in sender;
+	struct sockaddr_in receiver;
 	
 	// setup to capture process terminate signals
 	signal(SIGINT, quitHandler);
@@ -81,16 +82,14 @@ int main(int argc, char* argv[])
 	sender_port = atoi(argv[4]);
 	logfilename = argv[5];
 	
-	cout << get_time_stamp() << endl;
-	
-	//setup sender
-	memset(&sender, 0, sizeof(sender));
-	sender.sin_family = PF_INET;
-	sender.sin_addr.s_addr = inet_addr(sender_ip.c_str());
-	sender.sin_port = htons(sender_port);
-	
-	// try to open a socket
-	listening_socket = socket(PF_INET, SOCK_STREAM, 0);
+	//setup receiver address
+	memset(&receiver, 0, sizeof(receiver));
+	receiver.sin_family = PF_INET;
+	receiver.sin_addr.s_addr = INADDR_ANY;
+	receiver.sin_port = htons(listening_port);
+
+	// try to open a UDP socket
+	listening_socket = socket(PF_INET, SOCK_DGRAM, 0);
 	if(listening_socket < 0)
 	{
 		error("Failed to open socket.");
@@ -98,7 +97,7 @@ int main(int argc, char* argv[])
 	}
 	
 	// attempt to bind the socket
-	if (bind(listening_socket, (struct sockaddr *)&sender, sizeof(sender)) < 0) 
+	if (bind(listening_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) 
 	{
 		error("Failed to bind.");
 		shutdown(listening_socket, SHUT_RDWR);
@@ -108,6 +107,14 @@ int main(int argc, char* argv[])
 	// it is expecting total user size. This server do not accept duplicate logins
 	listen(listening_socket, 1);
 	
+	//setup sender address
+	memset(&sender, 0, sizeof(sender));
+	sender.sin_family = PF_INET;
+	sender.sin_addr.s_addr = inet_addr(sender_ip.c_str());
+	sender.sin_port = htons(sender_port);
+	
+	shutdown(listening_socket, SHUT_RDWR);
+	shutdown(outgoing_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);
 }
 

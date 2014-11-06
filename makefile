@@ -4,7 +4,7 @@ CC := g++
 # compiler flags:
   # -g     	adds debugging information to the executable file
   # -Wall  	turns on most, but not all, compiler warnings
-CFLAGS := -g -Wall -pthread
+CFLAGS := -g -Wall #-pthread
 
 # soruce file defines
 SOURCES := sender.cpp receiver.cpp
