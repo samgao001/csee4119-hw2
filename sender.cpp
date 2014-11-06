@@ -18,6 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <math.h>
+#include <vector>
 
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -33,8 +34,8 @@ using namespace std;
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
 {
-	ofstream log_file;
-	time_t time_stamp;
+	string logfilename;
+	string time_stamp;
 	string source;
 	string destin;
 	int seq_num;
@@ -43,11 +44,12 @@ typedef struct log_struct_t
 }log_data;
 
 /******************* Global Variables ****************************/
-vector<byte[]> raw_data = new vector<byte[]>;
+vector<char> raw_data;
 
 /******************* Function Prototype **************************/
 void error(string str);
 void quitHandler(int exit_code);
+string get_time_stamp(void);
 void read_file(string filename);
 void write_log(log_data* my_log);
 
@@ -85,6 +87,8 @@ int main(int argc, char* argv[])
 	{
 		window_size = atoi(argv[5]);
 	}
+	
+	read_file(filename);
  
 	// setup receiver
     memset(&receiver, 0, sizeof(receiver));
@@ -129,39 +133,68 @@ void error(string str)
 	cout << ">ERROR: " << str << endl;
 }
 
+/**************************************************************/
+/*	get_time_stamp - get a time stamp in a nice formmat
+/**************************************************************/
+string get_time_stamp(void)
+{
+	char buff[20];
+	time_t current_time;
+	time(&current_time);
+	strftime(buff, 20, "%Y-%m-%d %H:%M:%S", localtime(&current_time));
+	return buff;
+}
+
+/**************************************************************/
+/*	read_file - read transmitting file data to a buffer
+/**************************************************************/
 void read_file(string filename)
 {
 	ifstream fd;
-	fd.open(filename);
+	fd.open(filename.c_str());
 	streampos size;
-	byte[] buffer;
+	char* buffer;
 	
 	if(fd.is_open())
 	{
+		fd.seekg(0, ios::end);
 		size = fd.tellg();
-		buffer = new byte[size];
+		buffer = new char[size];
 		
 		fd.seekg(0, ios::beg);
 		fd.read(buffer, size);
 		fd.close();
 		
-		int i = 0;
+		cout << "bytes to read : " << size << endl;
 		
-		while(i < Math.ceil(size / BUFFER_SIZE))
+		for(int i = 0; i < size; i++)
 		{
-			memcpy(raw_data.at(i), &(buffer[i*BUFFER_SIZE]), BUFFER_SIZE); 
-		}
-		
-		for(int i = 0; i < raw_data.size(); i++)
-		{
-			for(int j = 0; j < BUFFER_SIZE; j++)
-			{
-				cout << raw_data.at(i)[j];
-			}
-			cout << endl;
+			raw_data.push_back(buffer[i]);
 		}
 		
 		delete[] buffer;
+	}
+	else
+	{
+		error("File not found.");
+	}
+}
+
+/**************************************************************/
+/*	write_log - write log
+/**************************************************************/
+void write_log(log_data* my_log)
+{
+	ofstream log;
+	log.open(my_log->logfilename.c_str());
+	
+	if(log.is_open())
+	{
+		log << my_log->time_stamp << ", " << my_log->source << ", " << my_log->destin << ", ";
+		log << my_log->seq_num << ", " << my_log->ack_num << ", " << my_log->flags << endl;
+		
+		log.flush();
+		log.close();
 	}
 	else
 	{

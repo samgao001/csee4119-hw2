@@ -17,6 +17,7 @@
 #include <sstream>
 #include <map>
 #include <time.h>
+#include <vector>
 
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -29,8 +30,8 @@ using namespace std;
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
 {
-	ofstream log_file;
-	time_t time_stamp;
+	string logfilename;
+	string time_stamp;
 	string source;
 	string destin;
 	int seq_num;
@@ -39,11 +40,12 @@ typedef struct log_struct_t
 }log_data;
 
 /******************* Global Variables ****************************/
-vector<byte[]> raw_data = new vector<byte[]>;
+vector<char> raw_data;
 
 /******************* Function Prototype **************************/
 void error(string str);
 void quitHandler(int signal_code);
+string get_time_stamp(void);
 void write_file(string filename);
 void write_log(log_data* my_log);
 
@@ -77,7 +79,9 @@ int main(int argc, char* argv[])
 	listening_port = atoi(argv[2]);
 	sender_ip = argv[3];
 	sender_port = atoi(argv[4]);
-	 = atoi(argv[5]);
+	logfilename = argv[5];
+	
+	cout << get_time_stamp() << endl;
 	
 	//setup sender
 	memset(&sender, 0, sizeof(sender));
@@ -102,7 +106,7 @@ int main(int argc, char* argv[])
 	}
 	
 	// it is expecting total user size. This server do not accept duplicate logins
-	listen(listening_socket, user_id.size());
+	listen(listening_socket, 1);
 	
 	exit(EXIT_SUCCESS);
 }
@@ -126,9 +130,59 @@ void error(string str)
 }
 
 /**************************************************************/
+/*	get_time_stamp - get a time stamp in a nice formmat
+/**************************************************************/
+string get_time_stamp(void)
+{
+	char buff[20];
+	time_t current_time;
+	time(&current_time);
+	strftime(buff, 20, "%Y-%m-%d %H:%M:%S", localtime(&current_time));
+	return buff;
+}
+
+/**************************************************************/
+/*	write_file - write received data to a file
+/**************************************************************/
+void write_file(string filename)
+{
+	ofstream fd;
+	fd.open(filename.c_str());
+	
+	if(fd.is_open())
+	{
+		for(int i = 0; i < raw_data.size(); i++)
+		{
+			fd << raw_data.at(i);
+		}
+		
+		fd.flush();
+		fd.close();
+	}
+	else
+	{
+		error("File not found.");
+	}
+}
+
+/**************************************************************/
 /*	write_log - write log
 /**************************************************************/
 void write_log(log_data* my_log)
 {
+	ofstream log;
+	log.open(my_log->logfilename.c_str());
 	
+	if(log.is_open())
+	{
+		log << my_log->time_stamp << ", " << my_log->source << ", " << my_log->destin << ", ";
+		log << my_log->seq_num << ", " << my_log->ack_num << ", " << my_log->flags << endl;
+		
+		log.flush();
+		log.close();
+	}
+	else
+	{
+		error("File not found.");
+	}
 }
