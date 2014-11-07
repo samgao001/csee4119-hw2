@@ -165,6 +165,8 @@ int main(int argc, char* argv[])
 		int n = 0;
 		n = recvfrom(receiver_socket, packet, sizeof(tcp_packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
 		
+		cout << n << endl;
+		
 		ack_packet->ack_num = packet->seq_num;
 		ack_packet->flags |= ACK_bm;
 		n = sendto(sender_socket, ack_packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&sender, len);

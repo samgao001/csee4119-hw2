@@ -189,15 +189,14 @@ int main(int argc, char* argv[])
 		n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
 		
 		n = recvfrom(sender_socket, ack_packet, TCP_HEADER_LEN, 0, (struct sockaddr*)&sender, (socklen_t*)&len);
-		
-		cout << n << " bytes received" <<endl;
+
 		// if correct ack packet is received, send next packet, else resend current packet
 		if((ack_packet->flags & ACK_bm) && packet->seq_num == ack_packet->ack_num)
 		{
 			packet->seq_num++;
 		}
 		
-		//cout << "ack " <<  ack_packet->ack_num << endl;
+		cout << "ack " <<  ack_packet->ack_num << endl;
 	}
 	
 	packet->flags |= FIN_bm;
