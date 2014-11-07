@@ -31,6 +31,7 @@ using namespace std;
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
 #define TCP_HEADER_LEN					20
+#define PACKET_SIZE						BUFFER_SIZE + TCP_HEADER_LEN
 #define VAR_WS_SUPPORT					false
 
 /************************* Typedefs ******************************/
@@ -45,23 +46,20 @@ typedef struct log_struct_t
 	string flags;
 }log_data;
 
-typedef struct tcp_header_t
+typedef struct tcp_packet_t
 {
+	// Start of TCP header
 	uint16_t source_port;
 	uint16_t destin_port;
 	uint32_t seq_num;
 	uint32_t ack_num;
-	uint8_t  data_off;
+	uint8_t  dataoffset_NSflag; // first 4 bits are data offset and last bit is NS flag
 	uint8_t  flags;
 	uint16_t window_size;
 	uint16_t checksum;
 	uint16_t URG;
-}tcp_header;
-
-typedef struct tcp_packet_t
-{
-	tcp_header_t header;
-	char* buffer;
+	//end of TCP header
+	char buffer[BUFFER_SIZE];
 }tcp_packet;
 
 /******************* Global Variables ****************************/
@@ -85,7 +83,8 @@ int main(int argc, char* argv[])
 	string logfilename;
 	int window_size = 1;
 	
-	tcp_packet* packet = (tcp_packet*)malloc(TCP_HEADER_LEN + BUFFER_SIZE);
+	tcp_packet* packet = (tcp_packet*)malloc(PACKET_SIZE);
+	tcp_packet* ack_packet = (tcp_packet*)malloc(PACKET_SIZE);
 	
 	int sender_socket;
 	int receiver_socket;
@@ -101,7 +100,8 @@ int main(int argc, char* argv[])
 	signal(SIGTSTP, quitHandler);
     
     // check if we have enough argument passed into the program
-    if (argc < 5) {
+    if (argc < 5) 
+    {
     	error("Not enough argument.\nUsage: ./receiver <filename> <remote_ip> <remote_port> <ack_port_num> <log_filename> <window_size>(window_size is optional)");
     }
 	
@@ -133,13 +133,54 @@ int main(int argc, char* argv[])
 	
     if((receiver_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
-		error("Failed to open socket.");
+		shutdown(receiver_socket, SHUT_RDWR);
+		error("Failed to open UDP socket.");
 	}
 	
-	int n = 0;
-	n = sendto(receiver_socket, raw_data, TCP_HEADER_LEN + BUFFER_SIZE, 0, (struct sockaddr *)&receiver, len);
-	cout << n << " bytes sent." << endl;
+	// try to open a TCP socket
+	if((sender_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0)
+	{
+		shutdown(receiver_socket, SHUT_RDWR);
+		shutdown(sender_socket, SHUT_RDWR);
+		error("Failed to open TCP socket.");
+	}
 	
+	// attempt to bind the TCP socket
+	if (bind(sender_socket, (struct sockaddr *)&sender, sizeof(sender)) < 0) 
+	{
+		shutdown(receiver_socket, SHUT_RDWR);
+		shutdown(sender_socket, SHUT_RDWR);
+		error("Failed to bind TCP socket.");
+	}
+	
+	packet->source_port = remote_port;
+	packet->destin_port = remote_port;
+	packet->seq_num = 0;
+	packet->ack_num = 0;
+	packet->dataoffset_NSflag = 0;
+	packet->flags = 0;
+	packet->window_size = window_size;
+	packet->checksum = 0;
+	packet->URG = 0;
+	
+	while((packet->seq_num * BUFFER_SIZE) <= file_size && file_size != 0)
+	{
+		int b_size = BUFFER_SIZE;
+		
+		if(file_size < (packet->seq_num + 1) * BUFFER_SIZE)
+		{
+			b_size = file_size - packet->seq_num * BUFFER_SIZE;
+		}
+		
+		memcpy(packet->buffer, (raw_data + packet->seq_num * BUFFER_SIZE), b_size);
+		b_size = b_size + TCP_HEADER_LEN;
+
+		int n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
+		packet->seq_num++;
+	}
+	
+	shutdown(receiver_socket, SHUT_RDWR);
+	shutdown(sender_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);
 }
 

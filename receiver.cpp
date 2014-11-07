@@ -30,6 +30,7 @@ using namespace std;
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
 #define TCP_HEADER_LEN					20
+#define PACKET_SIZE						BUFFER_SIZE + TCP_HEADER_LEN
 
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
@@ -43,8 +44,9 @@ typedef struct log_struct_t
 	string flags;
 }log_data;
 
-typedef struct tcp_header_t
+typedef struct tcp_packet_t
 {
+	// Start of TCP header
 	uint16_t source_port;
 	uint16_t destin_port;
 	uint32_t seq_num;
@@ -54,12 +56,8 @@ typedef struct tcp_header_t
 	uint16_t window_size;
 	uint16_t checksum;
 	uint16_t URG;
-}tcp_header;
-
-typedef struct tcp_packet_t
-{
-	tcp_header_t header;
-	char* buffer;
+	//end of TCP header
+	char buffer[BUFFER_SIZE];
 }tcp_packet;
 
 /******************* Global Variables ****************************/
@@ -81,7 +79,8 @@ int main(int argc, char* argv[])
 	int sender_port;
 	string logfilename;
 	
-	tcp_packet* packet = (tcp_packet*)malloc(TCP_HEADER_LEN + BUFFER_SIZE);
+	tcp_packet* packet = (tcp_packet*)malloc(PACKET_SIZE);
+	tcp_packet* ack_packet = (tcp_packet*)malloc(PACKET_SIZE);
 	
 	int sender_socket;
 	int receiver_socket;
@@ -118,24 +117,52 @@ int main(int argc, char* argv[])
 	sender.sin_family = PF_INET;
 	sender.sin_addr.s_addr = inet_addr(sender_ip.c_str());
 	sender.sin_port = htons(sender_port);
-
+	
 	// try to open a UDP socket
 	if((receiver_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
-		error("Failed to open socket.");
+		shutdown(receiver_socket, SHUT_RDWR);
+		error("Failed to open UDP socket.");
 	}
 	
 	// attempt to bind the socket
 	if (bind(receiver_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) 
 	{
 		shutdown(receiver_socket, SHUT_RDWR);
-		error("Failed to bind.");
+		error("Failed to bind UDP socket.");
 	}
 	
-	int n = 0;
-	char buffer[532];
-	n = recvfrom(receiver_socket, buffer, TCP_HEADER_LEN + BUFFER_SIZE, 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
-	cout << n << "bytes received.";
+	// try to open a TCP socket
+	if((sender_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0)
+	{
+		shutdown(receiver_socket, SHUT_RDWR);
+		shutdown(sender_socket, SHUT_RDWR);
+		error("Failed to open TCP socket.");
+	}
+	
+	ack_packet->source_port = sender_port;
+	ack_packet->destin_port = sender_port;
+	ack_packet->seq_num = 0;
+	ack_packet->ack_num = 0;
+	ack_packet->dataoffset_NSflag = 0;
+	ack_packet->flags = 0;
+	ack_packet->window_size = 1;
+	ack_packet->checksum = 0;
+	ack_packet->URG = 0;
+	
+	do
+	{
+		int n = 0;
+		n = recvfrom(receiver_socket, packet, sizeof(tcp_packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
+		cout << n << " bytes received." << endl;
+	
+		for(int i = 0; i < n - TCP_HEADER_LEN; i++)
+		{
+			raw_data.push_back(packet->buffer[i]);
+		}
+	}while(1);
+	
+	write_file(filename);
 	
 	shutdown(receiver_socket, SHUT_RDWR);
 	shutdown(sender_socket, SHUT_RDWR);
