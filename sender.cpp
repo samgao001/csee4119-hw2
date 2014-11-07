@@ -30,6 +30,9 @@ using namespace std;
 
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
+#define UDP_HEADER_LEN					8
+#define TCP_HEADER_LEN					20
+#define VAR_WS_SUPPORT					false
 
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
@@ -44,7 +47,7 @@ typedef struct log_struct_t
 }log_data;
 
 /******************* Global Variables ****************************/
-vector<char> raw_data;
+char* raw_data;
 
 /******************* Function Prototype **************************/
 void error(string str);
@@ -59,10 +62,12 @@ int main(int argc, char* argv[])
 	string filename;
 	string remote_ip;
 	int remote_port;
+	int ack_port_num;
 	string logfilename;
 	int window_size = 1;
 	
 	struct sockaddr_in receiver;
+	int len = sizeof(struct sockaddr_in);
 	int receiver_socket;
 	
 	// setup to capture process terminate signals
@@ -73,19 +78,19 @@ int main(int argc, char* argv[])
 	signal(SIGTSTP, quitHandler);
     
     // check if we have enough argument passed into the program
-    if (argc < 4) {
-    	error("Not enough argument.\nUsage: ./receiver <filename> <remote_ip> <remote_port> <log_filename> <window_size>(window_size is optional)");
-    	exit(EXIT_FAILURE);
+    if (argc < 5) {
+    	error("Not enough argument.\nUsage: ./receiver <filename> <remote_ip> <remote_port> <ack_port_num> <log_filename> <window_size>(window_size is optional)");
     }
 	
 	filename = argv[1];
 	remote_ip = argv[2];
 	remote_port = atoi(argv[3]);
-	logfilename = argv[4];
+	ack_port_num = atoi(argv[4]);
+	logfilename = argv[5];
 	
-	if(argc == 5)
+	if(argc == 6 && VAR_WS_SUPPORT)
 	{
-		window_size = atoi(argv[5]);
+		window_size = atoi(argv[6]);
 	}
 	
 	// port the file into byte buffer
@@ -97,13 +102,15 @@ int main(int argc, char* argv[])
     receiver.sin_family = PF_INET;
     receiver.sin_port = htons(remote_port);
 	
-    receiver_socket = socket(PF_INET, SOCK_STREAM, 0);
-    if(receiver_socket < 0)
+    if((receiver_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		error("Failed to open socket.");
-		exit(EXIT_FAILURE);
 	}
-    
+	
+	int n = 0;
+	n = sendto(receiver_socket, raw_data, BUFFER_SIZE, 0, (struct sockaddr *)&receiver, len);
+	cout << n << " bytes sent." << endl;
+	
 	exit(EXIT_SUCCESS);
 }
 
@@ -123,6 +130,7 @@ void quitHandler(int signal_code)
 void error(string str)
 {
 	cout << ">ERROR: " << str << endl;
+	exit(EXIT_FAILURE);
 }
 
 /**************************************************************/
@@ -145,26 +153,16 @@ void read_file(string filename)
 	ifstream fd;
 	fd.open(filename.c_str());
 	streampos size;
-	char* buffer;
 	
 	if(fd.is_open())
 	{
 		fd.seekg(0, ios::end);
 		size = fd.tellg();
-		buffer = new char[size];
+		raw_data = new char[size];
 		
 		fd.seekg(0, ios::beg);
-		fd.read(buffer, size);
+		fd.read(raw_data, size);
 		fd.close();
-		
-		cout << "bytes to read : " << size << endl;
-		
-		for(int i = 0; i < size; i++)
-		{
-			raw_data.push_back(buffer[i]);
-		}
-		
-		delete[] buffer;
 	}
 	else
 	{

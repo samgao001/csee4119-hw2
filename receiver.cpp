@@ -27,6 +27,11 @@
 
 using namespace std;
 
+/************************** Defines ******************************/
+#define BUFFER_SIZE						512
+#define UDP_HEADER_LEN					8
+#define TCP_HEADER_LEN					20
+
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
 {
@@ -62,6 +67,7 @@ int main(int argc, char* argv[])
 	int outgoing_socket;
 	struct sockaddr_in sender;
 	struct sockaddr_in receiver;
+	int len = sizeof(struct sockaddr_in);
 	
 	// setup to capture process terminate signals
 	signal(SIGINT, quitHandler);
@@ -73,7 +79,6 @@ int main(int argc, char* argv[])
 	if(argc < 5)
 	{
 		error("Not enough argument.\nUsage: ./receiver <filename> <listening_port> <sender_ip> <sender_port> <log_filename>");
-		exit(EXIT_FAILURE);
 	}
 	
 	filename = argv[1];
@@ -89,23 +94,23 @@ int main(int argc, char* argv[])
 	receiver.sin_port = htons(listening_port);
 
 	// try to open a UDP socket
-	listening_socket = socket(PF_INET, SOCK_DGRAM, 0);
-	if(listening_socket < 0)
+	if((listening_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		error("Failed to open socket.");
-		exit(EXIT_FAILURE);
 	}
 	
 	// attempt to bind the socket
 	if (bind(listening_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) 
 	{
-		error("Failed to bind.");
 		shutdown(listening_socket, SHUT_RDWR);
-		exit(EXIT_FAILURE);
+		error("Failed to bind.");
 	}
 	
-	// it is expecting total user size. This server do not accept duplicate logins
-	listen(listening_socket, 1);
+	int n = 0;
+	char buffer[512];
+	n = recvfrom(listening_socket, buffer, 512, 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
+	
+	cout << n << "bytes received.";
 	
 	//setup sender address
 	memset(&sender, 0, sizeof(sender));
@@ -134,6 +139,7 @@ void quitHandler(int signal_code)
 void error(string str)
 {
 	cout << ">ERROR: " << str << endl;
+	exit(EXIT_FAILURE);
 }
 
 /**************************************************************/
