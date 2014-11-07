@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
 	}
 	
 	int n = 0;
-	n = sendto(receiver_socket, raw_data, sizeof(&packet), 0, (struct sockaddr *)&receiver, len);
+	n = sendto(receiver_socket, raw_data, TCP_HEADER_LEN + BUFFER_SIZE, 0, (struct sockaddr *)&receiver, len);
 	cout << n << " bytes sent." << endl;
 	
 	exit(EXIT_SUCCESS);

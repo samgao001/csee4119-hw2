@@ -133,7 +133,8 @@ int main(int argc, char* argv[])
 	}
 	
 	int n = 0;
-	n = recvfrom(receiver_socket, &packet, sizeof(&packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
+	char buffer[532];
+	n = recvfrom(receiver_socket, buffer, TCP_HEADER_LEN + BUFFER_SIZE, 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
 	cout << n << "bytes received.";
 	
 	shutdown(receiver_socket, SHUT_RDWR);
