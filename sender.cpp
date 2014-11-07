@@ -34,6 +34,16 @@ using namespace std;
 #define PACKET_SIZE						BUFFER_SIZE + TCP_HEADER_LEN
 #define VAR_WS_SUPPORT					false
 
+#define NS_bm							(1 << 0)
+#define CWR_bm							(1 << 7)
+#define ECE_bm							(1 << 6)
+#define URG_bm							(1 << 5)							
+#define ACK_bm							(1 << 4)
+#define PSH_bm							(1 << 3)
+#define RST_bm							(1 << 2)
+#define SYN_bm							(1 << 1)
+#define FIN_bm							(1 << 0)
+
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
 {

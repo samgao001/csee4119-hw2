@@ -32,6 +32,16 @@ using namespace std;
 #define TCP_HEADER_LEN					20
 #define PACKET_SIZE						BUFFER_SIZE + TCP_HEADER_LEN
 
+#define NS_bm							(1 << 0)
+#define CWR_bm							(1 << 7)
+#define ECE_bm							(1 << 6)
+#define URG_bm							(1 << 5)							
+#define ACK_bm							(1 << 4)
+#define PSH_bm							(1 << 3)
+#define RST_bm							(1 << 2)
+#define SYN_bm							(1 << 1)
+#define FIN_bm							(1 << 0)
+
 /************************* Typedefs ******************************/
 typedef struct log_struct_t
 {
@@ -160,7 +170,7 @@ int main(int argc, char* argv[])
 		{
 			raw_data.push_back(packet->buffer[i]);
 		}
-	}while(1);
+	}while(~(packet & FIN_bm));
 	
 	write_file(filename);
 	
