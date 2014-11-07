@@ -29,7 +29,6 @@ using namespace std;
 
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
-#define UDP_HEADER_LEN					8
 #define TCP_HEADER_LEN					20
 
 /************************* Typedefs ******************************/
@@ -43,6 +42,25 @@ typedef struct log_struct_t
 	int ack_num;
 	string flags;
 }log_data;
+
+typedef struct tcp_header_t
+{
+	uint16_t source_port;
+	uint16_t destin_port;
+	uint32_t seq_num;
+	uint32_t ack_num;
+	uint8_t  dataoffset_NSflag; // first 4 bits are data offset and last bit is NS flag
+	uint8_t  flags;
+	uint16_t window_size;
+	uint16_t checksum;
+	uint16_t URG;
+}tcp_header;
+
+typedef struct tcp_packet_t
+{
+	tcp_header_t header;
+	char* buffer;
+}tcp_packet;
 
 /******************* Global Variables ****************************/
 vector<char> raw_data;
@@ -63,8 +81,10 @@ int main(int argc, char* argv[])
 	int sender_port;
 	string logfilename;
 	
-	int listening_socket;
-	int outgoing_socket;
+	tcp_packet* packet = (tcp_packet*)malloc(TCP_HEADER_LEN + BUFFER_SIZE);
+	
+	int sender_socket;
+	int receiver_socket;
 	struct sockaddr_in sender;
 	struct sockaddr_in receiver;
 	int len = sizeof(struct sockaddr_in);
@@ -92,34 +112,32 @@ int main(int argc, char* argv[])
 	receiver.sin_family = PF_INET;
 	receiver.sin_addr.s_addr = INADDR_ANY;
 	receiver.sin_port = htons(listening_port);
-
-	// try to open a UDP socket
-	if((listening_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
-	{
-		error("Failed to open socket.");
-	}
-	
-	// attempt to bind the socket
-	if (bind(listening_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) 
-	{
-		shutdown(listening_socket, SHUT_RDWR);
-		error("Failed to bind.");
-	}
-	
-	int n = 0;
-	char buffer[512];
-	n = recvfrom(listening_socket, buffer, 512, 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
-	
-	cout << n << "bytes received.";
 	
 	//setup sender address
 	memset(&sender, 0, sizeof(sender));
 	sender.sin_family = PF_INET;
 	sender.sin_addr.s_addr = inet_addr(sender_ip.c_str());
 	sender.sin_port = htons(sender_port);
+
+	// try to open a UDP socket
+	if((receiver_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		error("Failed to open socket.");
+	}
 	
-	shutdown(listening_socket, SHUT_RDWR);
-	shutdown(outgoing_socket, SHUT_RDWR);
+	// attempt to bind the socket
+	if (bind(receiver_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) 
+	{
+		shutdown(receiver_socket, SHUT_RDWR);
+		error("Failed to bind.");
+	}
+	
+	int n = 0;
+	n = recvfrom(receiver_socket, &packet, sizeof(packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
+	cout << n << "bytes received.";
+	
+	shutdown(receiver_socket, SHUT_RDWR);
+	shutdown(sender_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);
 }
 

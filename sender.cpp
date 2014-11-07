@@ -30,7 +30,6 @@ using namespace std;
 
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
-#define UDP_HEADER_LEN					8
 #define TCP_HEADER_LEN					20
 #define VAR_WS_SUPPORT					false
 
@@ -46,8 +45,28 @@ typedef struct log_struct_t
 	string flags;
 }log_data;
 
+typedef struct tcp_header_t
+{
+	uint16_t source_port;
+	uint16_t destin_port;
+	uint32_t seq_num;
+	uint32_t ack_num;
+	uint8_t  data_off;
+	uint8_t  flags;
+	uint16_t window_size;
+	uint16_t checksum;
+	uint16_t URG;
+}tcp_header;
+
+typedef struct tcp_packet_t
+{
+	tcp_header_t header;
+	char* buffer;
+}tcp_packet;
+
 /******************* Global Variables ****************************/
 char* raw_data;
+int file_size;
 
 /******************* Function Prototype **************************/
 void error(string str);
@@ -66,9 +85,13 @@ int main(int argc, char* argv[])
 	string logfilename;
 	int window_size = 1;
 	
+	tcp_packet* packet = (tcp_packet*)malloc(TCP_HEADER_LEN + BUFFER_SIZE);
+	
+	int sender_socket;
+	int receiver_socket;
+	struct sockaddr_in sender;
 	struct sockaddr_in receiver;
 	int len = sizeof(struct sockaddr_in);
-	int receiver_socket;
 	
 	// setup to capture process terminate signals
 	signal(SIGINT, quitHandler);
@@ -101,6 +124,12 @@ int main(int argc, char* argv[])
 	receiver.sin_addr.s_addr = inet_addr(remote_ip.c_str());
     receiver.sin_family = PF_INET;
     receiver.sin_port = htons(remote_port);
+    
+    //setup sender address
+	memset(&sender, 0, sizeof(sender));
+	sender.sin_family = PF_INET;
+	sender.sin_addr.s_addr = INADDR_ANY;
+	sender.sin_port = htons(ack_port_num);
 	
     if((receiver_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
@@ -108,7 +137,7 @@ int main(int argc, char* argv[])
 	}
 	
 	int n = 0;
-	n = sendto(receiver_socket, raw_data, BUFFER_SIZE, 0, (struct sockaddr *)&receiver, len);
+	n = sendto(receiver_socket, &packet, sizeof(packet), 0, (struct sockaddr *)&receiver, len);
 	cout << n << " bytes sent." << endl;
 	
 	exit(EXIT_SUCCESS);
@@ -158,6 +187,7 @@ void read_file(string filename)
 	{
 		fd.seekg(0, ios::end);
 		size = fd.tellg();
+		file_size = size;
 		raw_data = new char[size];
 		
 		fd.seekg(0, ios::beg);
