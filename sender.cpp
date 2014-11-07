@@ -81,7 +81,7 @@ void error(string str);
 void quitHandler(int exit_code);
 string get_time_stamp(void);
 void read_file(string filename);
-void write_log(log_data* my_log);
+bool write_log(log_data* my_log);
 
 /******************* Main program ********************************/
 int main(int argc, char* argv[])
@@ -163,7 +163,7 @@ int main(int argc, char* argv[])
 		error("Failed to bind TCP socket.");
 	}
 	
-	packet->source_port = remote_port;
+	packet->source_port = ack_port_num;
 	packet->destin_port = remote_port;
 	packet->seq_num = 0;
 	packet->ack_num = 0;
@@ -187,7 +187,17 @@ int main(int argc, char* argv[])
 		b_size = b_size + TCP_HEADER_LEN;
 
 		n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
-		packet->seq_num++;
+		
+		n = recvfrom(sender_socket, ack_packet, TCP_HEADER_LEN, 0, (struct sockaddr*)&sender, (socklen_t*)&len);
+		
+		cout << n << " bytes received" <<endl;
+		// if correct ack packet is received, send next packet, else resend current packet
+		if((ack_packet->flags & ACK_bm) && packet->seq_num == ack_packet->ack_num)
+		{
+			packet->seq_num++;
+		}
+		
+		//cout << "ack " <<  ack_packet->ack_num << endl;
 	}
 	
 	packet->flags |= FIN_bm;
@@ -258,7 +268,7 @@ void read_file(string filename)
 /**************************************************************/
 /*	write_log - write log
 /**************************************************************/
-void write_log(log_data* my_log)
+bool write_log(log_data* my_log)
 {
 	ofstream log;
 	log.open(my_log->logfilename.c_str());
@@ -273,6 +283,8 @@ void write_log(log_data* my_log)
 	}
 	else
 	{
-		error("File not found.");
+		cout << ">ERROR: Unable to create file." << endl;
+		return false;
 	}
+	return true;
 }

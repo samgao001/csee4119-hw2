@@ -29,7 +29,7 @@ using namespace std;
 
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
-#define TCP_HEADER_LEN						20
+#define TCP_HEADER_LEN					20
 #define PACKET_SIZE						BUFFER_SIZE + TCP_HEADER_LEN
 
 #define NS_bm							(1 << 0)
@@ -77,8 +77,8 @@ vector<char> raw_data;
 void error(string str);
 void quitHandler(int signal_code);
 string get_time_stamp(void);
-void write_file(string filename);
-void write_log(log_data* my_log);
+bool write_file(string filename);
+bool write_log(log_data* my_log);
 
 /******************* Main program ********************************/
 int main(int argc, char* argv[])
@@ -150,7 +150,7 @@ int main(int argc, char* argv[])
 		error("Failed to open TCP socket.");
 	}
 	
-	ack_packet->source_port = sender_port;
+	ack_packet->source_port = listening_port;
 	ack_packet->destin_port = sender_port;
 	ack_packet->seq_num = 0;
 	ack_packet->ack_num = 0;
@@ -164,15 +164,32 @@ int main(int argc, char* argv[])
 	{
 		int n = 0;
 		n = recvfrom(receiver_socket, packet, sizeof(tcp_packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
-		cout << n << " bytes received." << endl;
+		
+		ack_packet->ack_num = packet->seq_num;
+		ack_packet->flags |= ACK_bm;
+		n = sendto(sender_socket, ack_packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&sender, len);
 	
-		for(int i = 0; i < n - TCP_HEADER_LEN; i++)
+		// if the previous packet is out of sequence, update the raw_data buffer.
+		if(packet->seq_num * BUFFER_SIZE >= raw_data.size())
 		{
-			raw_data.push_back(packet->buffer[i]);
+			for(int i = 0; i < n - TCP_HEADER_LEN; i++)
+			{
+				raw_data.push_back(packet->buffer[i]);
+			}
+		}
+		else
+		{
+			for(int i = 0; i < n - TCP_HEADER_LEN; i++)
+			{
+				raw_data.at(packet->seq_num * BUFFER_SIZE + i) = packet->buffer[i];
+			}
 		}
 	}while((packet->flags & FIN_bm) == 0x00);
 	
-	write_file(filename);
+	if(!write_file(filename))
+	{
+		
+	}
 	
 	shutdown(receiver_socket, SHUT_RDWR);
 	shutdown(sender_socket, SHUT_RDWR);
@@ -213,7 +230,7 @@ string get_time_stamp(void)
 /**************************************************************/
 /*	write_file - write received data to a file
 /**************************************************************/
-void write_file(string filename)
+bool write_file(string filename)
 {
 	ofstream fd;
 	fd.open(filename.c_str());
@@ -230,14 +247,16 @@ void write_file(string filename)
 	}
 	else
 	{
-		error("File not found.");
+		cout << ">ERROR: Unable to create file." << endl;
+		return false;
 	}
+	return true;
 }
 
 /**************************************************************/
 /*	write_log - write log
 /**************************************************************/
-void write_log(log_data* my_log)
+bool write_log(log_data* my_log)
 {
 	ofstream log;
 	log.open(my_log->logfilename.c_str());
@@ -252,6 +271,8 @@ void write_log(log_data* my_log)
 	}
 	else
 	{
-		error("File not found.");
+		cout << ">ERROR: Unable to create file." << endl;
+		return false;
 	}
+	return true;
 }
