@@ -173,6 +173,7 @@ int main(int argc, char* argv[])
 	packet->checksum = 0;
 	packet->URG = 0;
 	
+	int n;
 	while((packet->seq_num * BUFFER_SIZE) <= file_size && file_size != 0)
 	{
 		int b_size = BUFFER_SIZE;
@@ -185,10 +186,13 @@ int main(int argc, char* argv[])
 		memcpy(packet->buffer, (raw_data + packet->seq_num * BUFFER_SIZE), b_size);
 		b_size = b_size + TCP_HEADER_LEN;
 
-		int n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
+		n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
 		packet->seq_num++;
 	}
 	
+	packet->flags |= FIN_bm;
+	n = sendto(receiver_socket, packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&receiver, len);
+
 	shutdown(receiver_socket, SHUT_RDWR);
 	shutdown(sender_socket, SHUT_RDWR);
 	exit(EXIT_SUCCESS);

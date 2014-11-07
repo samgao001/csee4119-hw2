@@ -170,7 +170,7 @@ int main(int argc, char* argv[])
 		{
 			raw_data.push_back(packet->buffer[i]);
 		}
-	}while(~(packet & FIN_bm));
+	}while((packet->flags & FIN_bm) == 0x00);
 	
 	write_file(filename);
 	
