@@ -29,7 +29,7 @@ using namespace std;
 
 /************************** Defines ******************************/
 #define BUFFER_SIZE						512
-#define TCP_HEADER_LEN					20
+#define TCP_HEADER_LEN						20
 #define PACKET_SIZE						BUFFER_SIZE + TCP_HEADER_LEN
 
 #define NS_bm							(1 << 0)
