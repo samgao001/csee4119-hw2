@@ -19,6 +19,8 @@
 #include <unistd.h>
 #include <math.h>
 #include <vector>
+#include <ctime>
+#include <cmath>
 
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -54,6 +56,7 @@ typedef struct log_struct_t
 	int seq_num;
 	int ack_num;
 	uint8_t flags;
+	long rtt;
 }log_data;
 
 typedef struct tcp_packet_t
@@ -175,6 +178,28 @@ int main(int argc, char* argv[])
 	
 	int n;
 	bool TCP_link = false;
+	long bytes_sent = 0;
+	long seg_sent = 0;
+	long seg_retrans = 0;
+	
+	log_data mylog;
+	mylog.logfilename = logfilename;
+	
+	int start, stop;
+	long RTT = 10; 			// default RTT to be 10ms
+	long rtt_i = 0;			// rtt of the current packet
+	long DevRTT = 0;		// default DevRTT
+	
+	//setup initial timeout with default RTT
+	struct timeval timeout;
+	timeout.tv_sec = 0;
+	timeout.tv_usec = (RTT + 4 * DevRTT) * 1000;
+	
+	if(setsockopt(sender_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+	{
+		error("failed to set timeout.");
+	}
+	
 	while((packet->seq_num * BUFFER_SIZE) <= file_size && file_size != 0)
 	{
 		int b_size = BUFFER_SIZE;
@@ -187,7 +212,22 @@ int main(int argc, char* argv[])
 		memcpy(packet->buffer, (raw_data + packet->seq_num * BUFFER_SIZE), b_size);
 		b_size = b_size + TCP_HEADER_LEN;
 
+		start = clock();
 		n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
+		
+		mylog.time_stamp = get_time_stamp();
+		mylog.source = ack_port_num;
+		mylog.destin = remote_port;
+		mylog.seq_num = packet->seq_num;
+		mylog.ack_num = packet->ack_num;
+		mylog.flags = packet->flags;
+		mylog.rtt = RTT;
+		if(!write_log(&mylog))
+		{
+			error("Failed to write log.");
+		}
+		
+		bytes_sent += b_size;
 		
 		if(!TCP_link)
 		{
@@ -205,21 +245,72 @@ int main(int argc, char* argv[])
 		}
 		
 		n = recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
-	
+		stop = clock();
+		
 		// if correct ack packet is received, send next packet, else resend current packet
-		if((ack_packet->flags & ACK_bm) && packet->seq_num == ack_packet->ack_num)
+		// also if the socket did not timeout
+		if((ack_packet->flags & ACK_bm) && packet->seq_num == ack_packet->ack_num && n >= 0)
 		{
 			packet->seq_num++;
 			packet->ack_num = ack_packet->ack_num;
+			
+			//update timeout for the TCP socket
+			rtt_i = (stop - start) / double(CLOCKS_PER_SEC) * 1000; //calculate rtt_i in ms
+			RTT = (long)(0.875 * (double)RTT + 0.125 * (double)rtt_i);
+			DevRTT = (long)(0.75 * DevRTT + 0.25 * abs(rtt_i - RTT));
+			timeout.tv_usec = (RTT + 4 * DevRTT) * 1000;
+			
+			mylog.time_stamp = get_time_stamp();
+			mylog.source = remote_port;
+			mylog.destin = ack_port_num;
+			mylog.seq_num = ack_packet->seq_num;
+			mylog.ack_num = ack_packet->ack_num;
+			mylog.flags = ack_packet->flags;
+			mylog.rtt = RTT;
+			if(!write_log(&mylog))
+			{
+				error("Failed to write log.");
+			}
+		
+			// if timeout is less than 10ms, forced that to 10ms
+			if(timeout.tv_usec < 10000)
+			{
+				timeout.tv_usec = 10000;
+			}
+		
+			if(setsockopt(sender_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+			{
+				error("failed to set timeout.");
+			}
 		}
 		
+		seg_sent++;	
 	}
 	
-	packet->flags |= FIN_bm;
-	n = sendto(receiver_socket, packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&receiver, len);
+	seg_retrans = seg_sent - packet->seq_num;
+	
+	// 4 way handshake to signal end of transmission
+	do{
+		packet->flags |= FIN_bm;
+		sendto(receiver_socket, packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&receiver, len);
+		n = recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+	}while(n < 0);
+
+	n = recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+	if(ack_packet->flags & FIN_bm)
+	{
+		ack_packet->flags = ACK_bm;
+		n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+	}
 
 	shutdown(receiver_socket, SHUT_RDWR);
 	shutdown(sender_socket, SHUT_RDWR);
+
+	cout << "Delivery completed successfully" << endl;
+	cout << "Total bytes sent = " << bytes_sent << endl;
+	cout << "Segments sent = " << seg_sent << endl;
+	cout << "Segments retransmitted = " << seg_retrans << endl;
+	
 	exit(EXIT_SUCCESS);
 }
 
@@ -296,7 +387,7 @@ bool write_log(log_data* my_log)
 			streampos size = fd.tellg();
 			if(size == 0)
 			{
-				fd << "Time Stamp       , Source, Destin, Seq Num, ACK Num, Flags" << endl;
+				fd << "Time Stamp       , Source, Destin, Seq Num, ACK Num, Flags, RTT" << endl;
 			}
 			fd.close();
 		}
@@ -310,7 +401,7 @@ bool write_log(log_data* my_log)
 	{
 		log << my_log->time_stamp << ", " << my_log->source << "  , " << my_log->destin << "  ,   ";
 		log << my_log->seq_num << "   ,   " << my_log->ack_num;
-		log << "   ,  0x" << hex << (int)my_log->flags << endl;
+		log << "   ,  0x" << hex << (int)my_log->flags << ", " << my_log->rtt << endl;
 		log.flush();
 		log.close();
 	}

@@ -163,7 +163,7 @@ int main(int argc, char* argv[])
 	
 	int n = 0;
 	bool TCP_link = false;
-	
+
 	log_data mylog;
 	mylog.logfilename = logfilename;
 	
@@ -177,7 +177,11 @@ int main(int argc, char* argv[])
 		mylog.seq_num = packet->seq_num;
 		mylog.ack_num = packet->ack_num;
 		mylog.flags = packet->flags;
-		write_log(&mylog);
+		
+		if(!write_log(&mylog))
+		{
+			error("Failed to write log.");
+		}
 		
 		// if the previous packet is out of sequence, update the raw_data buffer.
 		if(packet->seq_num * BUFFER_SIZE >= raw_data.size())
@@ -218,17 +222,28 @@ int main(int argc, char* argv[])
 		mylog.seq_num = ack_packet->seq_num;
 		mylog.ack_num = ack_packet->ack_num;
 		mylog.flags = ack_packet->flags;
-		write_log(&mylog);
+		
+		if(!write_log(&mylog))
+		{
+			error("Failed to write log.");
+		}
 		
 	}while((packet->flags & FIN_bm) == 0x00);
 	
-	if(!write_file(filename))
-	{
-		
-	}
+	ack_packet->flags = FIN_bm;
+	n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+	recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
 	
 	shutdown(receiver_socket, SHUT_RDWR);
 	shutdown(sender_socket, SHUT_RDWR);
+	
+	if(!write_file(filename))
+	{
+		cout << "Failed to create file." << endl;
+	}
+	
+	cout << "Delivery completed successfully." << endl;
+	
 	exit(EXIT_SUCCESS);
 }
 
