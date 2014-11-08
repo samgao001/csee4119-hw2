@@ -18,6 +18,7 @@
 #include <map>
 #include <time.h>
 #include <vector>
+#include <iomanip>
 
 #include <sys/types.h> 
 #include <sys/socket.h>
@@ -47,11 +48,11 @@ typedef struct log_struct_t
 {
 	string logfilename;
 	string time_stamp;
-	string source;
-	string destin;
+	int source;
+	int destin;
 	int seq_num;
 	int ack_num;
-	string flags;
+	uint8_t flags;
 }log_data;
 
 typedef struct tcp_packet_t
@@ -160,17 +161,24 @@ int main(int argc, char* argv[])
 	ack_packet->checksum = 0;
 	ack_packet->URG = 0;
 	
+	int n = 0;
+	bool TCP_link = false;
+	
+	log_data mylog;
+	mylog.logfilename = logfilename;
+	
 	do
 	{
-		int n = 0;
 		n = recvfrom(receiver_socket, packet, sizeof(tcp_packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
 		
-		cout << n << endl;
+		mylog.time_stamp = get_time_stamp();
+		mylog.source = sender_port;
+		mylog.destin = listening_port;
+		mylog.seq_num = packet->seq_num;
+		mylog.ack_num = packet->ack_num;
+		mylog.flags = packet->flags;
+		write_log(&mylog);
 		
-		ack_packet->ack_num = packet->seq_num;
-		ack_packet->flags |= ACK_bm;
-		n = sendto(sender_socket, ack_packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&sender, len);
-	
 		// if the previous packet is out of sequence, update the raw_data buffer.
 		if(packet->seq_num * BUFFER_SIZE >= raw_data.size())
 		{
@@ -186,6 +194,32 @@ int main(int argc, char* argv[])
 				raw_data.at(packet->seq_num * BUFFER_SIZE + i) = packet->buffer[i];
 			}
 		}
+		
+		if(!TCP_link)
+		{
+			// Connect to remote server
+			if(connect(sender_socket, (struct sockaddr *)&sender, sizeof(sender)) < 0)
+			{
+				shutdown(receiver_socket, SHUT_RDWR);
+				shutdown(sender_socket, SHUT_RDWR);
+				error("Failed establish TCP link.");
+			}
+			TCP_link = true;
+		}
+		
+		ack_packet->seq_num = packet->seq_num;
+		ack_packet->ack_num = packet->seq_num;
+		ack_packet->flags |= ACK_bm;
+		n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+		
+		mylog.time_stamp = get_time_stamp();
+		mylog.source = listening_port;
+		mylog.destin = sender_port;
+		mylog.seq_num = ack_packet->seq_num;
+		mylog.ack_num = ack_packet->ack_num;
+		mylog.flags = ack_packet->flags;
+		write_log(&mylog);
+		
 	}while((packet->flags & FIN_bm) == 0x00);
 	
 	if(!write_file(filename))
@@ -225,7 +259,7 @@ string get_time_stamp(void)
 	char buff[20];
 	time_t current_time;
 	time(&current_time);
-	strftime(buff, 20, "%Y-%m-%d %H:%M:%S", localtime(&current_time));
+	strftime(buff, 20, "%D %T", localtime(&current_time));
 	return buff;
 }
 
@@ -235,7 +269,7 @@ string get_time_stamp(void)
 bool write_file(string filename)
 {
 	ofstream fd;
-	fd.open(filename.c_str());
+	fd.open(filename.c_str(), fstream::out);
 	
 	if(fd.is_open())
 	{
@@ -258,16 +292,34 @@ bool write_file(string filename)
 /**************************************************************/
 /*	write_log - write log
 /**************************************************************/
+bool log_opened_previously = false;
 bool write_log(log_data* my_log)
 {
+	if(!log_opened_previously)
+	{
+		fstream fd;
+		fd.open(my_log->logfilename.c_str(), fstream::in | fstream::out | fstream::app);
+		if(fd.is_open())
+		{
+			fd.seekg(0, ios::end);
+			streampos size = fd.tellg();
+			if(size == 0)
+			{
+				fd << "Time Stamp       , Source, Destin, Seq Num, ACK Num, Flags" << endl;
+			}
+			fd.close();
+		}
+		log_opened_previously = true;
+	}
+	
 	ofstream log;
-	log.open(my_log->logfilename.c_str());
+	log.open(my_log->logfilename.c_str(), fstream::app);
 	
 	if(log.is_open())
 	{
-		log << my_log->time_stamp << ", " << my_log->source << ", " << my_log->destin << ", ";
-		log << my_log->seq_num << ", " << my_log->ack_num << ", " << my_log->flags << endl;
-		
+		log << my_log->time_stamp << ", " << my_log->source << "  , " << my_log->destin << "  ,   ";
+		log << my_log->seq_num << "   ,   " << my_log->ack_num;
+		log << "   ,  0x" << hex << (int)my_log->flags << endl;
 		log.flush();
 		log.close();
 	}

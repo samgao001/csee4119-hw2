@@ -49,11 +49,11 @@ typedef struct log_struct_t
 {
 	string logfilename;
 	string time_stamp;
-	string source;
-	string destin;
+	int source;
+	int destin;
 	int seq_num;
 	int ack_num;
-	string flags;
+	uint8_t flags;
 }log_data;
 
 typedef struct tcp_packet_t
@@ -174,6 +174,7 @@ int main(int argc, char* argv[])
 	packet->URG = 0;
 	
 	int n;
+	bool TCP_link = false;
 	while((packet->seq_num * BUFFER_SIZE) <= file_size && file_size != 0)
 	{
 		int b_size = BUFFER_SIZE;
@@ -188,15 +189,30 @@ int main(int argc, char* argv[])
 
 		n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
 		
-		n = recvfrom(sender_socket, ack_packet, TCP_HEADER_LEN, 0, (struct sockaddr*)&sender, (socklen_t*)&len);
-
+		if(!TCP_link)
+		{
+			// only one to one TCP connection
+			listen(sender_socket, 1);
+			sender_socket = accept(sender_socket, (struct sockaddr *)&sender, (socklen_t*)&len);
+			
+			if(sender_socket < 0)
+			{
+				shutdown(receiver_socket, SHUT_RDWR);
+				shutdown(sender_socket, SHUT_RDWR);
+				error("Failed to establish TCP link");
+			}
+			TCP_link = true;
+		}
+		
+		n = recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+	
 		// if correct ack packet is received, send next packet, else resend current packet
 		if((ack_packet->flags & ACK_bm) && packet->seq_num == ack_packet->ack_num)
 		{
 			packet->seq_num++;
+			packet->ack_num = ack_packet->ack_num;
 		}
 		
-		cout << "ack " <<  ack_packet->ack_num << endl;
 	}
 	
 	packet->flags |= FIN_bm;
@@ -267,16 +283,34 @@ void read_file(string filename)
 /**************************************************************/
 /*	write_log - write log
 /**************************************************************/
+bool log_opened_previously = false;
 bool write_log(log_data* my_log)
 {
+	if(!log_opened_previously)
+	{
+		fstream fd;
+		fd.open(my_log->logfilename.c_str(), fstream::in | fstream::out | fstream::app);
+		if(fd.is_open())
+		{
+			fd.seekg(0, ios::end);
+			streampos size = fd.tellg();
+			if(size == 0)
+			{
+				fd << "Time Stamp       , Source, Destin, Seq Num, ACK Num, Flags" << endl;
+			}
+			fd.close();
+		}
+		log_opened_previously = true;
+	}
+	
 	ofstream log;
-	log.open(my_log->logfilename.c_str());
+	log.open(my_log->logfilename.c_str(), fstream::app);
 	
 	if(log.is_open())
 	{
-		log << my_log->time_stamp << ", " << my_log->source << ", " << my_log->destin << ", ";
-		log << my_log->seq_num << ", " << my_log->ack_num << ", " << my_log->flags << endl;
-		
+		log << my_log->time_stamp << ", " << my_log->source << "  , " << my_log->destin << "  ,   ";
+		log << my_log->seq_num << "   ,   " << my_log->ack_num;
+		log << "   ,  0x" << hex << (int)my_log->flags << endl;
 		log.flush();
 		log.close();
 	}
