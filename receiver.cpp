@@ -77,6 +77,7 @@ vector<char> raw_data;
 /******************* Function Prototype **************************/
 void error(string str);
 void quitHandler(int signal_code);
+uint16_t get_checksum(tcp_packet* packet, int buff_len);
 string get_time_stamp(void);
 bool write_file(string filename);
 bool write_log(log_data* my_log);
@@ -163,6 +164,7 @@ int main(int argc, char* argv[])
 	
 	int n = 0;
 	bool TCP_link = false;
+	uint16_t cs = 0;
 
 	log_data mylog;
 	mylog.logfilename = logfilename;
@@ -170,6 +172,7 @@ int main(int argc, char* argv[])
 	do
 	{
 		n = recvfrom(receiver_socket, packet, sizeof(tcp_packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
+		cs = get_checksum(packet, n - TCP_HEADER_LEN);
 		
 		mylog.time_stamp = get_time_stamp();
 		mylog.source = sender_port;
@@ -181,22 +184,6 @@ int main(int argc, char* argv[])
 		if(!write_log(&mylog))
 		{
 			error("Failed to write log.");
-		}
-		
-		// if the previous packet is out of sequence, update the raw_data buffer.
-		if(packet->seq_num * BUFFER_SIZE >= raw_data.size())
-		{
-			for(int i = 0; i < n - TCP_HEADER_LEN; i++)
-			{
-				raw_data.push_back(packet->buffer[i]);
-			}
-		}
-		else
-		{
-			for(int i = 0; i < n - TCP_HEADER_LEN; i++)
-			{
-				raw_data.at(packet->seq_num * BUFFER_SIZE + i) = packet->buffer[i];
-			}
 		}
 		
 		if(!TCP_link)
@@ -211,21 +198,41 @@ int main(int argc, char* argv[])
 			TCP_link = true;
 		}
 		
-		ack_packet->seq_num = packet->seq_num;
-		ack_packet->ack_num = packet->seq_num;
-		ack_packet->flags |= ACK_bm;
-		n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
-		
-		mylog.time_stamp = get_time_stamp();
-		mylog.source = listening_port;
-		mylog.destin = sender_port;
-		mylog.seq_num = ack_packet->seq_num;
-		mylog.ack_num = ack_packet->ack_num;
-		mylog.flags = ack_packet->flags;
-		
-		if(!write_log(&mylog))
+		if(cs == packet->checksum)
 		{
-			error("Failed to write log.");
+			// if the previous packet is out of sequence, update the raw_data buffer.
+			if(packet->seq_num * BUFFER_SIZE >= raw_data.size())
+			{
+				for(int i = 0; i < n - TCP_HEADER_LEN; i++)
+				{
+					raw_data.push_back(packet->buffer[i]);
+				}
+			}
+			else
+			{
+				for(int i = 0; i < n - TCP_HEADER_LEN; i++)
+				{
+					raw_data.at(packet->seq_num * BUFFER_SIZE + i) = packet->buffer[i];
+				}
+			}
+		
+			ack_packet->seq_num = packet->seq_num;
+			ack_packet->ack_num = packet->seq_num;
+			ack_packet->flags |= ACK_bm;
+			ack_packet->checksum = get_checksum(ack_packet, 0);
+			n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
+		
+			mylog.time_stamp = get_time_stamp();
+			mylog.source = listening_port;
+			mylog.destin = sender_port;
+			mylog.seq_num = ack_packet->seq_num;
+			mylog.ack_num = ack_packet->ack_num;
+			mylog.flags = ack_packet->flags;
+		
+			if(!write_log(&mylog))
+			{
+				error("Failed to write log.");
+			}
 		}
 		
 	}while((packet->flags & FIN_bm) == 0x00);
@@ -264,6 +271,35 @@ void error(string str)
 {
 	cout << ">ERROR: " << str << endl;
 	exit(EXIT_FAILURE);
+}
+
+/**************************************************************/
+/*	get_checksum - get the checksum of the packet
+/**************************************************************/
+uint16_t get_checksum(tcp_packet* packet, int buff_len)
+{
+	uint16_t checksum = 0x00;
+	
+	checksum = packet->source_port + packet->destin_port;
+	checksum = checksum + (packet->seq_num >> 16) & 0xFFFFFFFF;
+	checksum = checksum + packet->seq_num & 0xFFFFFFFF;
+	checksum = checksum + (packet->ack_num >> 16) & 0xFFFFFFFF;
+	checksum = checksum + packet->ack_num & 0xFFFFFFFF;
+	checksum = checksum + packet->dataoffset_NSflag << 8 | packet->flags;
+	checksum = checksum + packet-> window_size;
+	checksum = checksum + packet->URG;
+	
+	for(int i = 0; i < buff_len; i+=2)
+	{
+		checksum = checksum + ((packet->buffer[i] << 8) | packet->buffer[i+1]);
+	}
+	
+	if(buff_len % 2 == 1)
+	{
+		checksum = checksum + packet->buffer[buff_len - 1];
+	}
+	
+	return checksum;
 }
 
 /**************************************************************/

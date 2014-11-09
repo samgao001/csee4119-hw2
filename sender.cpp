@@ -82,6 +82,7 @@ int file_size;
 /******************* Function Prototype **************************/
 void error(string str);
 void quitHandler(int exit_code);
+uint16_t get_checksum(tcp_packet* packet, int buff_len);
 string get_time_stamp(void);
 void read_file(string filename);
 bool write_log(log_data* my_log);
@@ -173,7 +174,6 @@ int main(int argc, char* argv[])
 	packet->dataoffset_NSflag = 0;
 	packet->flags = 0;
 	packet->window_size = window_size;
-	packet->checksum = 0;
 	packet->URG = 0;
 	
 	int n;
@@ -213,6 +213,7 @@ int main(int argc, char* argv[])
 		b_size = b_size + TCP_HEADER_LEN;
 
 		start = clock();
+		packet->checksum = get_checksum(packet, b_size - TCP_HEADER_LEN);
 		n = sendto(receiver_socket, packet, b_size, 0, (struct sockaddr *)&receiver, len);
 		
 		mylog.time_stamp = get_time_stamp();
@@ -292,6 +293,7 @@ int main(int argc, char* argv[])
 	// 4 way handshake to signal end of transmission
 	do{
 		packet->flags |= FIN_bm;
+		packet->checksum = get_checksum(packet, 0);
 		sendto(receiver_socket, packet, TCP_HEADER_LEN, 0, (struct sockaddr *)&receiver, len);
 		n = recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
 	}while(n < 0);
@@ -331,6 +333,35 @@ void error(string str)
 {
 	cout << ">ERROR: " << str << endl;
 	exit(EXIT_FAILURE);
+}
+
+/**************************************************************/
+/*	get_checksum - get the checksum of the packet
+/**************************************************************/
+uint16_t get_checksum(tcp_packet* packet, int buff_len)
+{
+	uint16_t checksum = 0x00;
+	
+	checksum = packet->source_port + packet->destin_port;
+	checksum = checksum + (packet->seq_num >> 16) & 0xFFFFFFFF;
+	checksum = checksum + packet->seq_num & 0xFFFFFFFF;
+	checksum = checksum + (packet->ack_num >> 16) & 0xFFFFFFFF;
+	checksum = checksum + packet->ack_num & 0xFFFFFFFF;
+	checksum = checksum + packet->dataoffset_NSflag << 8 | packet->flags;
+	checksum = checksum + packet-> window_size;
+	checksum = checksum + packet->URG;
+	
+	for(int i = 0; i < buff_len; i+=2)
+	{
+		checksum = checksum + ((packet->buffer[i] << 8) | packet->buffer[i+1]);
+	}
+	
+	if(buff_len % 2 == 1)
+	{
+		checksum = checksum + packet->buffer[buff_len - 1];
+	}
+	
+	return checksum;
 }
 
 /**************************************************************/
@@ -401,7 +432,8 @@ bool write_log(log_data* my_log)
 	{
 		log << my_log->time_stamp << ", " << my_log->source << "  , " << my_log->destin << "  ,   ";
 		log << my_log->seq_num << "   ,   " << my_log->ack_num;
-		log << "   ,  0x" << hex << (int)my_log->flags << ", " << my_log->rtt << endl;
+		log << "   ,  0x" << hex << (int)my_log->flags;
+		log << ", " << my_log->rtt << endl;
 		log.flush();
 		log.close();
 	}
