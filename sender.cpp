@@ -442,7 +442,7 @@ bool write_log(log_data* my_log)
 		log << my_log->time_stamp << ", " << my_log->source << "  , " << my_log->destin << "  ,   ";
 		log << my_log->seq_num << "   ,   " << my_log->ack_num;
 		log << "   ,  0x" << hex << (int)my_log->flags;
-		log << ", " << (long)(my_log->rtt) << endl;
+		log << ", " << dec << my_log->rtt << endl;
 		log.flush();
 		log.close();
 	}
