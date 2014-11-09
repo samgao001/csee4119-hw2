@@ -198,6 +198,11 @@ int main(int argc, char* argv[])
 	struct timeval timeout;
 	timeout.tv_sec = 0;
 	timeout.tv_usec = (RTT + 4 * DevRTT) * 1000;
+	
+	if(setsockopt(sender_listen, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+	{
+		error("failed to set timeout.");
+	}
 
 	while((packet->seq_num * BUFFER_SIZE) <= file_size && file_size != 0)
 	{
@@ -241,14 +246,12 @@ int main(int argc, char* argv[])
 				shutdown(sender_socket, SHUT_RDWR);
 				error("Failed to establish TCP link");
 			}
-			else
-			{
-				if(setsockopt(sender_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
-				{
-					error("failed to set timeout.");
-				}
-			}
 			TCP_link = true;
+			
+			if(setsockopt(sender_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+			{
+				error("failed to set timeout.");
+			}
 		}
 		
 		n = recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
