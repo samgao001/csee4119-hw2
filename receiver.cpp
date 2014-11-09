@@ -137,6 +137,9 @@ int main(int argc, char* argv[])
 		error("Failed to open UDP socket.");
 	}
 	
+	int iSetOption = 1;
+	setsockopt(receiver_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&iSetOption, sizeof(iSetOption));
+	
 	// attempt to bind the socket
 	if (bind(receiver_socket, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) 
 	{
@@ -172,6 +175,7 @@ int main(int argc, char* argv[])
 	do
 	{
 		n = recvfrom(receiver_socket, packet, sizeof(tcp_packet), 0, (struct sockaddr*)&receiver, (socklen_t*)&len);
+		
 		cs = get_checksum(packet, n - TCP_HEADER_LEN);
 		
 		mylog.time_stamp = get_time_stamp();
@@ -188,7 +192,7 @@ int main(int argc, char* argv[])
 		
 		if(!TCP_link)
 		{
-			// Connect to remote server
+			// Connect to remote ip
 			if(connect(sender_socket, (struct sockaddr *)&sender, sizeof(sender)) < 0)
 			{
 				shutdown(receiver_socket, SHUT_RDWR);
@@ -241,16 +245,17 @@ int main(int argc, char* argv[])
 	n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
 	recv(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
 	
-	shutdown(receiver_socket, SHUT_RDWR);
-	shutdown(sender_socket, SHUT_RDWR);
-	
 	if(!write_file(filename))
 	{
 		cout << "Failed to create file." << endl;
 	}
 	
 	cout << "Delivery completed successfully." << endl;
-	
+
+	shutdown(receiver_socket, SHUT_RDWR);
+	shutdown(sender_socket, SHUT_RDWR);
+	close(receiver_socket);
+	close(sender_socket);
 	exit(EXIT_SUCCESS);
 }
 

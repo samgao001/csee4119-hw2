@@ -101,6 +101,7 @@ int main(int argc, char* argv[])
 	tcp_packet* ack_packet = (tcp_packet*)malloc(PACKET_SIZE);
 	
 	int sender_socket;
+	int sender_listen;
 	int receiver_socket;
 	struct sockaddr_in sender;
 	struct sockaddr_in receiver;
@@ -152,19 +153,22 @@ int main(int argc, char* argv[])
 	}
 	
 	// try to open a TCP socket
-	if((sender_socket = socket(PF_INET, SOCK_STREAM, 0)) < 0)
+	if((sender_listen = socket(PF_INET, SOCK_STREAM, 0)) < 0)
 	{
 		shutdown(receiver_socket, SHUT_RDWR);
-		shutdown(sender_socket, SHUT_RDWR);
+		shutdown(sender_listen, SHUT_RDWR);
 		error("Failed to open TCP socket.");
 	}
 	
+	int iSetOption = 1;
+	setsockopt(sender_listen, SOL_SOCKET, SO_REUSEADDR, (char*)&iSetOption, sizeof(iSetOption));
+	
 	// attempt to bind the TCP socket
-	if (bind(sender_socket, (struct sockaddr *)&sender, sizeof(sender)) < 0) 
+	if(bind(sender_listen, (struct sockaddr *)&sender, sizeof(sender)) < 0) 
 	{
 		shutdown(receiver_socket, SHUT_RDWR);
-		shutdown(sender_socket, SHUT_RDWR);
-		error("Failed to bind TCP socket.");
+		shutdown(sender_listen, SHUT_RDWR);
+		error("Failed to bind TCP socket. Port in use, try another port.");
 	}
 	
 	packet->source_port = ack_port_num;
@@ -194,12 +198,7 @@ int main(int argc, char* argv[])
 	struct timeval timeout;
 	timeout.tv_sec = 0;
 	timeout.tv_usec = (RTT + 4 * DevRTT) * 1000;
-	
-	if(setsockopt(sender_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
-	{
-		error("failed to set timeout.");
-	}
-	
+
 	while((packet->seq_num * BUFFER_SIZE) <= file_size && file_size != 0)
 	{
 		int b_size = BUFFER_SIZE;
@@ -233,14 +232,21 @@ int main(int argc, char* argv[])
 		if(!TCP_link)
 		{
 			// only one to one TCP connection
-			listen(sender_socket, 1);
-			sender_socket = accept(sender_socket, (struct sockaddr *)&sender, (socklen_t*)&len);
+			listen(sender_listen, 1);
+			sender_socket = accept(sender_listen, (struct sockaddr *)&sender, (socklen_t*)&len);
 			
 			if(sender_socket < 0)
 			{
 				shutdown(receiver_socket, SHUT_RDWR);
 				shutdown(sender_socket, SHUT_RDWR);
 				error("Failed to establish TCP link");
+			}
+			else
+			{
+				if(setsockopt(sender_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+				{
+					error("failed to set timeout.");
+				}
 			}
 			TCP_link = true;
 		}
@@ -305,14 +311,17 @@ int main(int argc, char* argv[])
 		n = send(sender_socket, ack_packet, TCP_HEADER_LEN, 0);
 	}
 
-	shutdown(receiver_socket, SHUT_RDWR);
-	shutdown(sender_socket, SHUT_RDWR);
-
 	cout << "Delivery completed successfully" << endl;
 	cout << "Total bytes sent = " << bytes_sent << endl;
 	cout << "Segments sent = " << seg_sent << endl;
 	cout << "Segments retransmitted = " << seg_retrans << endl;
 	
+	shutdown(receiver_socket, SHUT_RDWR);
+	shutdown(sender_socket, SHUT_RDWR);
+	shutdown(sender_listen, SHUT_RDWR);
+	close(receiver_socket);
+	close(sender_socket);
+	close(sender_listen);
 	exit(EXIT_SUCCESS);
 }
 
@@ -433,7 +442,7 @@ bool write_log(log_data* my_log)
 		log << my_log->time_stamp << ", " << my_log->source << "  , " << my_log->destin << "  ,   ";
 		log << my_log->seq_num << "   ,   " << my_log->ack_num;
 		log << "   ,  0x" << hex << (int)my_log->flags;
-		log << ", " << my_log->rtt << endl;
+		log << ", " << (long)(my_log->rtt) << endl;
 		log.flush();
 		log.close();
 	}
