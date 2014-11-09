@@ -322,9 +322,6 @@ int main(int argc, char* argv[])
 	shutdown(receiver_socket, SHUT_RDWR);
 	shutdown(sender_socket, SHUT_RDWR);
 	shutdown(sender_listen, SHUT_RDWR);
-	close(receiver_socket);
-	close(sender_socket);
-	close(sender_listen);
 	exit(EXIT_SUCCESS);
 }
 
